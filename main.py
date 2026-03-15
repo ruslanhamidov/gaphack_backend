@@ -361,6 +361,8 @@ def award_badge(user_id: int, badge_data: dict, session: Session = Depends(get_s
     session.commit()
     session.refresh(badge)
     return {"id": badge.id, "badge_type": badge.badge_type, "user_id": badge.user_id}
+
+
 # -------- Leaderboard endpoint --------
 
 
