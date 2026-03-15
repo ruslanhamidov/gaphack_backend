@@ -9,6 +9,7 @@ class User(SQLModel, table=True):
     reputation: int = 0
     bio: Optional[str] = None
     password_hash: Optional[str] = None
+    email: Optional[str] = None
 
 class Task(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
