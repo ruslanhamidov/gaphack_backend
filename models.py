@@ -8,6 +8,7 @@ class User(SQLModel, table=True):
     role: str  # "user" or "company"
     reputation: int = 0
     bio: Optional[str] = None
+    password_hash: Optional[str] = None
 
 class Task(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)

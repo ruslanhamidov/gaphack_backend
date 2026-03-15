@@ -6,7 +6,7 @@ from sqlmodel import Session, func, select
 
 from database import engine, get_session, init_db
 from models import Badge, Submission, Task, User
-
+import bcrypt
 
 app = FastAPI(title="GapHack API")
 
@@ -27,6 +27,12 @@ def on_startup() -> None:
     init_db()
     seed_demo_data()
 
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode(), hashed.encode())
 
 def seed_demo_data() -> None:
     # Use a direct session on the shared engine for one-time seeding.
@@ -92,9 +98,17 @@ def seed_demo_data() -> None:
 # -------- User endpoints --------
 
 
-@app.post("/users", response_model=User)
-def create_user(user: User, session: Session = Depends(get_session)) -> User:
-    db_user = User(username=user.username, role=user.role, reputation=0)
+@app.post("/users")
+def create_user(user: dict, session: Session = Depends(get_session)):
+    existing = session.exec(select(User).where(User.username == user["username"])).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already taken")
+    db_user = User(
+        username=user["username"],
+        role=user.get("role", "user"),
+        reputation=0,
+        password_hash=hash_password(user["password"]) if user.get("password") else None,
+    )
     session.add(db_user)
     session.commit()
     session.refresh(db_user)
@@ -119,6 +133,21 @@ def get_user_profile(user_id: int, session: Session = Depends(get_session)):
         "submissions": submissions,
     }
 
+
+@app.post("/login")
+def login(credentials: dict, session: Session = Depends(get_session)):
+    user = session.exec(select(User).where(User.username == credentials["username"])).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.password_hash and not verify_password(credentials.get("password", ""), user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect password")
+    badges = session.exec(select(Badge).where(Badge.user_id == user.id)).all()
+    submissions = session.exec(select(Submission).where(Submission.user_id == user.id)).all()
+    return {
+        "id": user.id, "username": user.username, "role": user.role,
+        "reputation": user.reputation, "bio": user.bio,
+        "badges": badges, "submissions": submissions,
+    }
 
 # -------- Task endpoints --------
 
