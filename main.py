@@ -7,6 +7,7 @@ from sqlmodel import Session, func, select
 from database import engine, get_session, init_db
 from models import Badge, Submission, Task, User
 import bcrypt
+import re
 
 app = FastAPI(title="GapHack API")
 
@@ -28,6 +29,9 @@ def on_startup() -> None:
     seed_demo_data()
 
 
+def is_valid_email(email: str) -> bool:
+    return bool(re.match(r'^[^@]+@[^@]+\.[^@]+$', email))
+
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
@@ -35,63 +39,76 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode(), hashed.encode())
 
 def seed_demo_data() -> None:
-    # Use a direct session on the shared engine for one-time seeding.
     with Session(engine) as session:
         users_exist = session.exec(select(func.count(User.id))).one()
         if users_exist:
             return
 
-        security_researcher = User(username="security_researcher", role="user", reputation=0)
-        cyber_ninja = User(username="cyber_ninja", role="user", reputation=0)
-        acme_corp = User(username="acme_corp", role="company", reputation=0)
+        # ── Users ──────────────────────────────────────────
+        researcher1 = User(username="ghost_0x1", role="user", reputation=0, email="ghost@gaphack.io", password_hash=hash_password("demo123"))
+        researcher2 = User(username="null_ptr", role="user", reputation=0, email="null@gaphack.io", password_hash=hash_password("demo123"))
+        researcher3 = User(username="xor_queen", role="user", reputation=0, email="xor@gaphack.io", password_hash=hash_password("demo123"))
+        researcher4 = User(username="byte_wolf", role="user", reputation=0, email="byte@gaphack.io", password_hash=hash_password("demo123"))
+        researcher5 = User(username="security_researcher", role="user", reputation=0, email="researcher@gaphack.io", password_hash=hash_password("demo123"))
 
-        session.add_all([security_researcher, cyber_ninja, acme_corp])
+        company1 = User(username="acme_corp", role="company", reputation=0, email="acme@gaphack.io", password_hash=hash_password("demo123"))
+        company2 = User(username="securebank_az", role="company", reputation=0, email="securebank@gaphack.io", password_hash=hash_password("demo123"))
+        company3 = User(username="nexacloud", role="company", reputation=0, email="nexacloud@gaphack.io", password_hash=hash_password("demo123"))
+
+        session.add_all([researcher1, researcher2, researcher3, researcher4, researcher5, company1, company2, company3])
         session.commit()
-        session.refresh(security_researcher)
-        session.refresh(cyber_ninja)
-        session.refresh(acme_corp)
+        for u in [researcher1, researcher2, researcher3, researcher4, researcher5, company1, company2, company3]:
+            session.refresh(u)
 
-        task1 = Task(
-            title="Find XSS vulnerability in login form",
-            description="Analyze the login page for reflected or stored XSS vectors.",
-            difficulty="Medium",
-            reward_points=100,
-            company_id=acme_corp.id,
-            category="Web Application",
-            tags="XSS,Auth,Stored",
-        )
-        task2 = Task(
-            title="Detect SQL injection in API endpoint",
-            description="Review the `/api/login` endpoint for potential SQL injection.",
-            difficulty="Hard",
-            reward_points=150,
-            company_id=acme_corp.id,
-            category="Authentication",
-            tags="SQLi,API,Auth",
-        )
-
-        session.add_all([task1, task2])
+        # ── Tasks ──────────────────────────────────────────
+        tasks = [
+            Task(title="Find XSS vulnerability in login form", description="Analyze the login page for reflected or stored XSS vectors. Focus on the username and error message fields. Document reproduction steps and suggest a sanitization fix.", difficulty="Medium", reward_points=300, company_id=company1.id, category="Web Application", tags="XSS,Auth,Stored"),
+            Task(title="Detect SQL injection in API endpoint", description="Review the /api/login endpoint for potential SQL injection. Test boolean-based, time-based, and error-based injection techniques against all input parameters.", difficulty="Hard", reward_points=500, company_id=company1.id, category="Authentication", tags="SQLi,API,Auth"),
+            Task(title="JWT Token Forgery Analysis", description="Investigate our JWT implementation for algorithm confusion attacks (HS256 vs RS256), weak secrets, and improper claim validation. Check for missing expiry checks.", difficulty="Hard", reward_points=800, company_id=company2.id, category="Authentication", tags="JWT,Crypto,Token"),
+            Task(title="CSRF in Fund Transfer Flow", description="Assess the multi-step fund transfer UI for CSRF vulnerabilities. Focus on state-changing operations that lack proper token validation or SameSite cookie attributes.", difficulty="Critical", reward_points=1500, company_id=company2.id, category="Web Application", tags="CSRF,Finance,Session"),
+            Task(title="AWS S3 Bucket Misconfiguration Audit", description="Review public-facing S3 bucket policies for data exposure risks, improper ACLs, and cross-account access issues. Check for publicly listable buckets and exposed credentials.", difficulty="Medium", reward_points=600, company_id=company3.id, category="Cloud Security", tags="AWS,S3,IAM"),
+            Task(title="GraphQL API Rate Limiting Bypass", description="Test our GraphQL endpoint for introspection abuse, query batching attacks, and rate limiting bypass techniques. Look for deeply nested query DoS vectors.", difficulty="Hard", reward_points=700, company_id=company3.id, category="API Security", tags="GraphQL,API,RateLimit"),
+            Task(title="Subdomain Takeover Scan", description="Enumerate all subdomains and identify dangling DNS records pointing to deprovisioned cloud resources. Check for takeover potential on Azure, AWS, GitHub Pages, and Heroku.", difficulty="Medium", reward_points=400, company_id=company1.id, category="Network Security", tags="DNS,Subdomain,Cloud"),
+            Task(title="Phishing Simulation Review", description="Analyze our email filtering and employee security posture against targeted spear-phishing simulations. Identify gaps in SPF, DKIM, and DMARC configuration.", difficulty="Easy", reward_points=200, company_id=company2.id, category="Social Engineering", tags="Phishing,Email,OSINT"),
+        ]
+        session.add_all(tasks)
         session.commit()
-        session.refresh(task1)
-        session.refresh(task2)
+        for t in tasks:
+            session.refresh(t)
 
-        sub1 = Submission(
-            task_id=task1.id,  # type: ignore[arg-type]
-            user_id=security_researcher.id,  # type: ignore[arg-type]
-            content="Reflected XSS in error message when invalid username is supplied.",
-        )
-        sub2 = Submission(
-            task_id=task1.id,  # type: ignore[arg-type]
-            user_id=cyber_ninja.id,  # type: ignore[arg-type]
-            content="Stored XSS via profile bio field rendered on login page.",
-        )
-        sub3 = Submission(
-            task_id=task2.id,  # type: ignore[arg-type]
-            user_id=security_researcher.id,  # type: ignore[arg-type]
-            content="Boolean-based blind SQL injection in `user` parameter.",
-        )
+        # ── Submissions ────────────────────────────────────
+        submissions = [
+            Submission(task_id=tasks[0].id, user_id=researcher1.id, content="Found reflected XSS in the error message when invalid username is supplied. Payload: <script>alert(document.cookie)</script> in the username field returns unescaped in the error response.", status="rewarded", upvotes=14),
+            Submission(task_id=tasks[0].id, user_id=researcher2.id, content="Stored XSS via profile bio field rendered on login page. Any user can inject a persistent payload that executes for all visitors.", status="pending", upvotes=8),
+            Submission(task_id=tasks[1].id, user_id=researcher1.id, content="Boolean-based blind SQL injection confirmed in the `user` parameter. Using payload ' OR '1'='1 bypasses authentication entirely. The query appears to be: SELECT * FROM users WHERE username='' OR '1'='1'--", status="rewarded", upvotes=21),
+            Submission(task_id=tasks[1].id, user_id=researcher3.id, content="Time-based injection also works: ' OR SLEEP(5)-- causes a 5 second delay confirming the vulnerability. MySQL version leaked via error messages.", status="pending", upvotes=6),
+            Submission(task_id=tasks[2].id, user_id=researcher2.id, content="Algorithm confusion attack confirmed. Server accepts HS256 tokens signed with the public RSA key as the HMAC secret. Forged admin token successfully.", status="rewarded", upvotes=18),
+            Submission(task_id=tasks[4].id, user_id=researcher4.id, content="Found publicly listable bucket at s3://nexacloud-backups. Contains database dumps from 2023 with plaintext customer emails and hashed passwords.", status="pending", upvotes=11),
+            Submission(task_id=tasks[6].id, user_id=researcher5.id, content="Identified 3 dangling CNAME records pointing to deprovisioned Heroku apps. Subdomain api-staging.acmecorp.com is claimable and could be used to serve malicious content.", status="pending", upvotes=5),
+        ]
+        session.add_all(submissions)
+        session.commit()
+        for s in submissions:
+            session.refresh(s)
 
-        session.add_all([sub1, sub2, sub3])
+        # ── Badges ─────────────────────────────────────────
+        badges = [
+            Badge(user_id=researcher1.id, task_id=tasks[0].id, badge_type="Vulnerability Finder"),
+            Badge(user_id=researcher1.id, task_id=tasks[1].id, badge_type="Critical Gap Hunter"),
+            Badge(user_id=researcher2.id, task_id=tasks[2].id, badge_type="Zero Day Scout"),
+            Badge(user_id=researcher3.id, task_id=tasks[1].id, badge_type="Security Analyst"),
+            Badge(user_id=researcher4.id, task_id=tasks[4].id, badge_type="Bug Slayer"),
+        ]
+        session.add_all(badges)
+
+        # ── Reputation ─────────────────────────────────────
+        researcher1.reputation = 820
+        researcher2.reputation = 640
+        researcher3.reputation = 380
+        researcher4.reputation = 260
+        researcher5.reputation = 120
+
+        session.add_all([researcher1, researcher2, researcher3, researcher4, researcher5])
         session.commit()
 
 
@@ -100,13 +117,19 @@ def seed_demo_data() -> None:
 
 @app.post("/users")
 def create_user(user: dict, session: Session = Depends(get_session)):
-    existing = session.exec(select(User).where(User.username == user["username"])).first()
-    if existing:
+    if not user.get("email") or not is_valid_email(user["email"]):
+        raise HTTPException(status_code=400, detail="Valid email address is required")
+    existing_user = session.exec(select(User).where(User.username == user["username"])).first()
+    if existing_user:
         raise HTTPException(status_code=400, detail="Username already taken")
+    existing_email = session.exec(select(User).where(User.email == user["email"])).first()
+    if existing_email:
+        raise HTTPException(status_code=400, detail="Email already registered")
     db_user = User(
         username=user["username"],
         role=user.get("role", "user"),
         reputation=0,
+        email=user["email"],
         password_hash=hash_password(user["password"]) if user.get("password") else None,
     )
     session.add(db_user)
