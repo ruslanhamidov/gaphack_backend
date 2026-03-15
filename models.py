@@ -33,6 +33,6 @@ class Submission(SQLModel, table=True):
 class Badge(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id")
-    task_id: int = Field(foreign_key="task.id")
+    task_id: Optional[int] = Field(default=None, foreign_key="task.id")
     badge_type: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
