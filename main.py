@@ -124,13 +124,34 @@ def get_user_profile(user_id: int, session: Session = Depends(get_session)):
     badges = session.exec(select(Badge).where(Badge.user_id == user_id)).all()
     submissions = session.exec(select(Submission).where(Submission.user_id == user_id)).all()
 
+    def enrich_submission(sub):
+        task = session.get(Task, sub.task_id)
+        return {
+            "id": sub.id,
+            "task_id": sub.task_id,
+            "task_title": task.title if task else f"Task #{sub.task_id}",
+            "content": sub.content,
+            "status": sub.status,
+            "upvotes": sub.upvotes,
+            "created_at": sub.created_at.isoformat(),
+        }
+
     return {
         "id": user.id,
         "username": user.username,
         "role": user.role,
         "reputation": user.reputation,
-        "badges": badges,
-        "submissions": submissions,
+        "bio": user.bio,
+        "badges": [
+            {
+                "id": b.id,
+                "badge_type": b.badge_type,
+                "task_id": b.task_id,
+                "created_at": b.created_at.isoformat(),
+            }
+            for b in badges
+        ],
+        "submissions": [enrich_submission(s) for s in submissions],
     }
 
 
@@ -144,13 +165,40 @@ def login(credentials: dict, session: Session = Depends(get_session)):
     badges = session.exec(select(Badge).where(Badge.user_id == user.id)).all()
     submissions = session.exec(select(Submission).where(Submission.user_id == user.id)).all()
     return {
-        "id": user.id, "username": user.username, "role": user.role,
-        "reputation": user.reputation, "bio": user.bio,
-        "badges": badges, "submissions": submissions,
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "reputation": user.reputation,
+        "bio": user.bio,
+        "badges": [
+            {
+                "id": b.id,
+                "badge_type": b.badge_type,
+                "task_id": b.task_id,
+                "created_at": b.created_at.isoformat(),
+            }
+            for b in badges
+        ],
+        "submissions": [
+            {
+                "id": s.id,
+                "task_id": s.task_id,
+                "task_title": session.get(Task, s.task_id).title if session.get(Task, s.task_id) else f"Task #{s.task_id}",
+                "content": s.content,
+                "status": s.status,
+                "upvotes": s.upvotes,
+                "created_at": s.created_at.isoformat(),
+            }
+            for s in submissions
+        ],
     }
 
 # -------- Task endpoints --------
 
+@app.get("/debug/badges")
+def debug_badges(session: Session = Depends(get_session)):
+    all_badges = session.exec(select(Badge)).all()
+    return [{"id": b.id, "user_id": b.user_id, "badge_type": b.badge_type} for b in all_badges]
 
 @app.get("/tasks")
 def list_tasks(session: Session = Depends(get_session)) -> List[dict]:
@@ -273,36 +321,46 @@ def list_submissions(task_id: int, session: Session = Depends(get_session)):
 
 
 @app.post("/submissions/{submission_id}/reward")
-def reward_submission(submission_id: int, session: Session = Depends(get_session)):
+def reward_submission(submission_id: int, badge_data: dict = {}, session: Session = Depends(get_session)):
     submission = session.get(Submission, submission_id)
     if not submission:
         raise HTTPException(status_code=404, detail="Submission not found")
-
     if submission.status == "rewarded":
         raise HTTPException(status_code=400, detail="Submission already rewarded")
-
     user = session.get(User, submission.user_id)
     task = session.get(Task, submission.task_id)
     if not user or not task:
         raise HTTPException(status_code=400, detail="Submission references invalid user or task")
-
     badge = Badge(
-        user_id=user.id,  # type: ignore[arg-type]
-        task_id=task.id,  # type: ignore[arg-type]
-        badge_type="Security Finding",
+        user_id=user.id,
+        task_id=task.id,
+        badge_type=badge_data.get("badge_type", "Security Finding"),
     )
     submission.status = "rewarded"
     user.reputation += BADGE_REWARD_POINTS
-
     session.add(badge)
     session.add(submission)
     session.add(user)
     session.commit()
     session.refresh(user)
-
     return {"message": "Submission rewarded", "user_reputation": user.reputation}
 
-
+@app.post("/users/{user_id}/badges")
+def award_badge(user_id: int, badge_data: dict, session: Session = Depends(get_session)):
+    user = session.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    badge = Badge(
+        user_id=user_id,
+        task_id=None,
+        badge_type=badge_data["badge_type"],
+    )
+    user.reputation += 25
+    session.add(badge)
+    session.add(user)
+    session.commit()
+    session.refresh(badge)
+    return {"id": badge.id, "badge_type": badge.badge_type, "user_id": badge.user_id}
 # -------- Leaderboard endpoint --------
 
 
